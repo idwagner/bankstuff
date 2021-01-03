@@ -18,7 +18,8 @@ class GmailMessage:
 
     @property
     def body(self):
-        text = b64decode(self._message['payload']['body']['data'])
+        body = self._message['payload']['body']['data']
+        text = b64decode(body, altchars="-_")        
         text = text.replace(b'\r', b'')
         text = text.replace(b'\n', b'')
         text = text.decode('utf-8')
