@@ -37,6 +37,15 @@ def exec_import(days):
 
 
 
+@click.option('--days', required=False, default=14, type=click.INT)
+@click.command('budget-bills')
+def exec_budget_bills(days):
+    from bankutil.process.ynab import cli_budget_bills
+
+    cli_budget_bills(days)
+
+
+
 
 @click.command('google-auth')
 def google_auth():
@@ -64,4 +73,5 @@ def google_auth():
         fd.write(creds.to_json())
 
 main.add_command(exec_import)
+main.add_command(exec_budget_bills)
 main.add_command(google_auth)
