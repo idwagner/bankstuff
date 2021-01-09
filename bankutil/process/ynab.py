@@ -6,34 +6,108 @@ import re
 import logging
 from tabulate import tabulate
 
+from datetime import datetime, date
+import calendar
+
 LOG = logging.getLogger(__name__)
 RE_kv = re.compile(r'([a-zA-Z]+)=(.+)')
 
-daily_rate_multiplier = {
-    'weekly': (1/7.0),
-    'monthly': (1/30.0),
-    'yearly': (1/365.0),
-}
+def add_months(sourcedate, months):
+    month = sourcedate.month - 1 + months
+    year = sourcedate.year + month // 12
+    month = month % 12 + 1
+    day = min(sourcedate.day, calendar.monthrange(year,month)[1])
+    return date(year, month, day)
 
-def get_daily_rate(attribute_str: str):
-    
-    attr = {}
-    for pair in attribute_str.split(','):
-        matches = RE_kv.match(pair)
-        if matches:
-            attr[matches[1]] = matches[2]
+class PaymentDetails:
 
-    if 'type' not in attr:
-        LOG.error(f'Period Type not defined')
+    DAILY_RATE_MULTIPLIER = {
+        'weekly': (1/7.0),
+        'monthly': (1/30.0),
+        'yearly': (1/365.0),
+    }
 
-    if 'amount' not in attr:
-        LOG.error(f'Amount not defined')
+    def __init__(self, category):
+        self._category = category
+        self._daily_rate = 0
+        self.type = ''
+        self.amount = 0
+        self.dueday = 1
 
-    if not attr['type'] in daily_rate_multiplier:
-        LOG.error(f'Unknown Type {attr["type"]}')
-    
-    return daily_rate_multiplier[attr['type']] * float(attr['amount'])
-    
+        # Values are csv keypairs, eg type=monthly,amount=23,dueday=2
+        attr = dict(map(lambda x: x.split('='), category.note.split(','))) 
+
+        if 'type' in attr:
+            self.type = attr['type']
+        if 'amount' in attr:
+            self.amount = float(attr['amount'])
+        if 'dueday' in attr:
+            self.dueday = int(attr['dueday'])
+
+    @property
+    def daily_rate_mult(self):
+        return self.DAILY_RATE_MULTIPLIER.get(self.type, 0)
+
+    @property
+    def daily_rate(self):
+        return self.daily_rate_mult * float(self.amount)
+
+    @property
+    def next_due(self):
+        if self.type == 'weekly':
+            return False
+            
+        today = datetime.now()
+        this_month_due = datetime(today.year, today.month, self.dueday)
+        LOG.info(f'{self._category.name} {self.dueday}')
+
+        if self.dueday < today.day:
+            # Already paid this month, set to next month
+            return add_months(this_month_due, 1)
+        else:
+            return this_month_due
+
+    @property
+    def days_until_due(self):
+        today = datetime.now()
+        return (self.next_due - today).days
+
+def cli_budget_overage(days_until_income=0):
+
+    ynab_bearer_token = CONF.get('ynab_bearer_token')
+    ynab_budget_id = CONF.get('ynab_budget_id')
+    ynab_account_id = CONF.get('ynab_account_id')
+
+    os.environ['YNAB_TOKEN'] = ynab_bearer_token
+    ynab_creds = get_credentials()
+    client = YNABClient(ynab_creds)
+
+    import pickle
+
+    # categories = client.categories.get_categories(ynab_budget_id)  
+    # with open('/tmp/cats.pickle', 'wb') as fd:
+    #     pickle.dump(categories, fd)
+
+    with open('/tmp/cats.pickle', 'rb') as fd:
+        categories = pickle.load(fd)
+
+    headers = ['name', 'daily_rate', 'next_due', 'days_until_due']
+
+    table = []
+    for category_group in categories.data.category_groups:
+        for category in category_group.categories:
+            if category.note:
+
+                payment = PaymentDetails(category)
+                data = {}
+                data['name'] = category.name
+                data['daily_rate'] = payment.daily_rate
+                data['next_due'] = payment.next_due
+                data['days_until_due'] = payment.days_until_due
+
+                table.append([data[x] for x in headers])
+
+    print(tabulate(table, headers))
 
 
 def cli_budget_bills(days):

@@ -46,6 +46,15 @@ def exec_budget_bills(days):
 
 
 
+@click.option('--days-until-income', required=False, default=14, type=click.INT)
+@click.command('budget-overage')
+def exec_budget_overage(days_until_income):
+    from bankutil.process.ynab import cli_budget_overage
+
+    cli_budget_overage(days_until_income)
+
+
+
 
 @click.command('google-auth')
 def google_auth():
@@ -74,4 +83,6 @@ def google_auth():
 
 main.add_command(exec_import)
 main.add_command(exec_budget_bills)
+main.add_command(exec_budget_overage)
 main.add_command(google_auth)
+    
